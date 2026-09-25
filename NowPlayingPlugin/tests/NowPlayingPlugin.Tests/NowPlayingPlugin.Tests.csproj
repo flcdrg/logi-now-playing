@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Loupedeck.NowPlayingPlugin.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      Resolved from the locally installed Logi Plugin Service, the same way
+      src/NowPlayingPlugin.csproj resolves PluginApi.dll. This keeps the SDK
+      assembly and its SkiaSharp native dependency out of source control; a
+      machine without Logi Plugin Service installed cannot build/run these
+      tests (see README's "Running tests" section).
+    -->
+    <PluginApiDir Condition="$(OS) == 'Windows_NT'">C:\Program Files\Logi\LogiPluginService\</PluginApiDir>
+    <PluginApiDir Condition="$(OS) != 'Windows_NT'">/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/</PluginApiDir>
+    <SkiaSharpNativeDir Condition="$(OS) != 'Windows_NT' AND '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">$(PluginApiDir).xamarin/osx-arm64/</SkiaSharpNativeDir>
+    <SkiaSharpNativeDir Condition="$(OS) != 'Windows_NT' AND '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' != 'Arm64'">$(PluginApiDir).xamarin/osx-x64/</SkiaSharpNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="PluginApi">
+      <HintPath>$(PluginApiDir)PluginApi.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SkiaSharp" Condition="$(OS) != 'Windows_NT'">
+      <HintPath>$(SkiaSharpNativeDir)SkiaSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Compiles the platform-neutral logic directly from the plugin project
+    instead of using a ProjectReference, so that building the tests never
+    triggers the plugin's CopyPackage/PostBuild targets (which copy package
+    assets into the installed plugin folder and ask Logi Plugin Service to
+    reload the live plugin). Process-based and lifecycle classes
+    (MacOsNowPlayingProvider, UnixSignal, NowPlayingPlugin, NowPlayingCommand)
+    are intentionally excluded; they are covered by manual/integration
+    verification instead (see README).
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Models\**\*.cs" LinkBase="Sut\Models" />
+    <Compile Include="..\..\src\Providers\INowPlayingProvider.cs" LinkBase="Sut\Providers" />
+    <Compile Include="..\..\src\Providers\NowPlayingCoordinator.cs" LinkBase="Sut\Providers" />
+    <Compile Include="..\..\src\Providers\MacOS\MediaRemoteAdapterState.cs" LinkBase="Sut\Providers\MacOS" />
+    <Compile Include="..\..\src\Providers\MacOS\MediaRemoteAdapterPaths.cs" LinkBase="Sut\Providers\MacOS" />
+    <Compile Include="..\..\src\Rendering\NowPlayingImageRenderer.cs" LinkBase="Sut\Rendering" />
+  </ItemGroup>
+
+  <!--
+    libSkiaSharp.dylib is a native dependency of PluginApi.dll's imaging APIs
+    (BitmapBuilder/BitmapImage). Copied to the test output directory at build
+    time (not committed to source control) so the renderer tests can actually
+    decode/draw pixels rather than only exercising managed code paths.
+  -->
+  <Target Name="CopySkiaSharpNative" AfterTargets="Build" Condition="$(OS) != 'Windows_NT'">
+    <Copy SourceFiles="$(PluginApiDir)libSkiaSharp.dylib" DestinationFolder="$(OutDir)" Condition="Exists('$(PluginApiDir)libSkiaSharp.dylib')" />
+  </Target>
+
+</Project>

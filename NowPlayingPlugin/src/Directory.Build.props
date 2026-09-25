@@ -1,0 +1,15 @@
+<Project>
+    <PropertyGroup>
+        <LangVersion>latest</LangVersion>
+        <!--
+          Intentionally left at the SDK default ("obj\", relative to each
+          project's own directory) rather than $(SolutionDir)obj\: the latter
+          resolves to the same absolute path for every project in the
+          solution when built via the .sln, causing intermediate build
+          artifacts (including generated AssemblyInfo) from different
+          projects to collide in one shared folder.
+        -->
+        <BaseOutputPath>$(SolutionDir)..\bin\</BaseOutputPath>
+    </PropertyGroup>
+</Project>
+
