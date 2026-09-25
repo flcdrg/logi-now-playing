@@ -39,7 +39,15 @@
     <Message Text="✅ Package files copied to $(OutputPath)..\" Importance="High" />
   </Target>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+  <!--
+    Writes a .link file into the locally installed Logi Plugin Service's
+    Plugins folder and asks it to hot-reload the plugin — useful for local
+    development, but there is no such service (and no $(PluginDir)) on a CI
+    runner. Set SkipPluginReload=true (e.g. `-p:SkipPluginReload=true`) to
+    skip this target, such as from the build-and-package GitHub Actions
+    workflow.
+  -->
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(SkipPluginReload)' != 'true'">
     <Exec Condition="$(OS) == 'Windows_NT'" Command="echo $(BaseOutputPath)$(Configuration)\ &gt; &quot;$(PluginDir)$(ProjectName).link&quot;" />
     <Exec Condition="$(OS) != 'Windows_NT'" Command="echo $(BaseOutputPath)$(Configuration)\ &gt; $(PluginDir)$(ProjectName).link" />
     <Message Text="🔨 Created plugin link at: $(PluginDir)$(ProjectName).link" Importance="High" />

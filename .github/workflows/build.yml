@@ -1,0 +1,107 @@
+name: Build, test & package
+
+# Builds the plugin, runs the automated test suite, and produces a verified
+# .lplug4 package artifact — the same package format submitted to the Logi
+# Marketplace. Runs on macos-14 (the only currently supported platform).
+#
+# Neither building nor testing requires Logi Options+ to be installed: the
+# PluginApi.dll / SkiaSharp assemblies are instead staged from the
+# `LogiPluginTool` .NET global tool (see scripts/stage-logi-sdk-assemblies.sh).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test-package:
+    name: Build, test & package
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install LogiPluginTool
+        run: dotnet tool install --global LogiPluginTool
+
+      - name: Stage Logi SDK assemblies (no Logi Options+ required)
+        id: sdk
+        run: |
+          ./scripts/stage-logi-sdk-assemblies.sh "${RUNNER_TEMP}/logi-sdk"
+          echo "plugin_api_dir=${RUNNER_TEMP}/logi-sdk/" >> "${GITHUB_OUTPUT}"
+
+      - name: Build plugin (Release)
+        run: >
+          dotnet build NowPlayingPlugin/src/NowPlayingPlugin.csproj
+          -c Release
+          -p:PluginApiDir="${{ steps.sdk.outputs.plugin_api_dir }}"
+          -p:SkipPluginReload=true
+
+      - name: Run tests (Release)
+        run: >
+          dotnet test NowPlayingPlugin/tests/NowPlayingPlugin.Tests/NowPlayingPlugin.Tests.csproj
+          -c Release
+          -p:PluginApiDir="${{ steps.sdk.outputs.plugin_api_dir }}"
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory "${{ runner.temp }}/test-results"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ runner.temp }}/test-results
+          if-no-files-found: error
+
+      - name: Read plugin version
+        id: version
+        run: |
+          version=$(grep -E '^version:' NowPlayingPlugin/src/package/metadata/LoupedeckPackage.yaml | awk '{print $2}')
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pack .lplug4
+        run: >
+          logiplugintool pack
+          ./NowPlayingPlugin/bin/Release
+          ./NowPlaying-${{ steps.version.outputs.version }}.lplug4
+
+      - name: Verify .lplug4
+        run: logiplugintool verify ./NowPlaying-${{ steps.version.outputs.version }}.lplug4
+
+      - name: Print package metadata
+        run: logiplugintool metadata ./NowPlaying-${{ steps.version.outputs.version }}.lplug4
+
+      - name: Upload .lplug4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NowPlaying-${{ steps.version.outputs.version }}
+          path: ./NowPlaying-${{ steps.version.outputs.version }}.lplug4
+          if-no-files-found: error
+
+      # Only on a "vX.Y.Z"-style tag push: attach the verified package to a
+      # GitHub release so there's a stable, versioned download to submit to
+      # the Logi Marketplace (marketplace submission itself remains a manual
+      # step — see https://logitech.github.io/actions-sdk-docs/).
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "./NowPlaying-${{ steps.version.outputs.version }}.lplug4"
+          --title "${{ github.ref_name }}"
+          --generate-notes

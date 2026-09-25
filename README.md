@@ -95,15 +95,46 @@ dotnet test
 ```
 
 The test project resolves `PluginApi.dll` and its `SkiaSharp`/`libSkiaSharp.dylib`
-native dependency from the same locally installed Logi Plugin Service, so
-Logi Options+ must be installed to build and run tests, but nothing from the
-SDK installation is copied into the repository or committed to source
-control. A small number of image-rendering tests are marked `Skip`: they
-exercise a `BitmapBuilder.DrawImage` code path that depends on native Skia
-state Logi Plugin Service initializes at its own startup, which isn't
-reproducible in a standalone `dotnet test` process — those code paths are
-instead verified manually against the running plugin (see
-[Manual verification](#manual-verification)).
+native dependency from the same locally installed Logi Plugin Service by
+default, so Logi Options+ must be installed to build and run tests that way —
+but nothing from the SDK installation is copied into the repository or
+committed to source control. A small number of image-rendering tests are
+marked `Skip`: they exercise a `BitmapBuilder.DrawImage` code path that
+depends on native Skia state Logi Plugin Service initializes at its own
+startup, which isn't reproducible in a standalone `dotnet test` process —
+those code paths are instead verified manually against the running plugin
+(see [Manual verification](#manual-verification)).
+
+### Building and testing without Logi Options+ installed
+
+`PluginApi.dll` and its SkiaSharp dependency are also bundled inside
+[`LogiPluginTool`](https://logitech.github.io/actions-sdk-docs/csharp/plugin-development/introduction/)
+itself (the same CLI used to pack/verify the `.lplug4` below), so both
+building and testing can be done on a machine — or CI runner — without the
+full desktop app installed:
+
+```bash
+dotnet tool install --global LogiPluginTool
+scripts/stage-logi-sdk-assemblies.sh .logi-sdk
+
+dotnet build NowPlayingPlugin/src -p:PluginApiDir="$(pwd)/.logi-sdk/" -p:SkipPluginReload=true
+dotnet test  NowPlayingPlugin/tests/NowPlayingPlugin.Tests -p:PluginApiDir="$(pwd)/.logi-sdk/"
+```
+
+`SkipPluginReload=true` skips writing the `.link` file / sending the reload
+command in `NowPlayingPlugin.csproj`'s `PostBuild` target, since there's no
+running Logi Plugin Service to reload in this scenario. This is exactly what
+the [`build.yml`](.github/workflows/build.yml) GitHub Actions workflow does.
+
+## Continuous integration
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the
+plugin, runs the test suite, and packs/verifies a `.lplug4` on every push and
+pull request against `main`, uploading the package as a workflow artifact.
+Pushing a `v*` tag (e.g. `v1.0`) additionally attaches the verified package
+to a GitHub release — a ready-to-submit artifact for the
+[Logi Marketplace](https://logitech.github.io/actions-sdk-docs/) (submission
+itself is a manual step on Logi's side).
 
 ## Setting up the action on a device
 
