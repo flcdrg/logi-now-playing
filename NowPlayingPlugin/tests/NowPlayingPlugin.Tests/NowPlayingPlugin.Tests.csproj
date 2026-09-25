@@ -49,6 +49,7 @@
     verification instead (see README).
   -->
   <ItemGroup>
+    <Compile Include="..\..\src\Actions\NowPlayingActionInvalidator.cs" LinkBase="Sut\Actions" />
     <Compile Include="..\..\src\Models\**\*.cs" LinkBase="Sut\Models" />
     <Compile Include="..\..\src\Providers\INowPlayingProvider.cs" LinkBase="Sut\Providers" />
     <Compile Include="..\..\src\Providers\NowPlayingCoordinator.cs" LinkBase="Sut\Providers" />

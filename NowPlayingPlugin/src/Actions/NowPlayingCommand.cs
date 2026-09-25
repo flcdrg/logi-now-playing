@@ -98,12 +98,13 @@ namespace Loupedeck.NowPlayingPlugin.Actions
         private void OnSnapshotChanged(NowPlayingSnapshot snapshot)
         {
             // A single media change may affect the image (artwork/idle/unavailable
-            // state) and/or the display name (title) depending on the mode, so all
-            // three parameters are invalidated together; Logi Plugin Service only
-            // re-renders what a given configured button actually shows.
-            this.ActionImageChanged(ArtworkAndTitleParameter);
-            this.ActionImageChanged(ArtworkOnlyParameter);
-            this.ActionImageChanged(TitleOnlyParameter);
+            // state) and/or the display name (title) depending on the mode. The
+            // parameterless SDK overload emits one event with
+            // AffectsAllParameters=true. Sending separate parameter-scoped
+            // events does not reliably refresh an active device profile.
+            PluginLog.Verbose(
+                $"Now Playing snapshot changed to {snapshot?.Status}; invalidating all display modes.");
+            NowPlayingActionInvalidator.InvalidateAllParameters(this.ActionImageChanged);
         }
     }
 }

@@ -94,6 +94,10 @@ Key architectural rules (deviating breaks the design, not just style):
   pipe and deadlock all future metadata updates. A one-shot `get`
   reconciliation every 10 seconds also repairs state if macOS drops a stream
   notification.
+- **Refresh all dynamic-action parameters with the parameterless SDK
+  `ActionImageChanged()` overload.** It emits one event with
+  `AffectsAllParameters=true`; separate parameter-scoped notifications did
+  not reliably refresh the currently active device profile.
 - **`Idle` vs `Unavailable` are distinct states**, not both collapsed to
   "nothing to show". `Idle` = provider healthy, nothing playing anywhere.
   `Unavailable` = the provider itself can't function (e.g. unsupported OS
