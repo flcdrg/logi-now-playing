@@ -245,5 +245,70 @@ namespace Loupedeck.NowPlayingPlugin.Tests.Providers.MacOS
             Assert.Equal(String.Empty, snapshot.Media.Artist);
             Assert.Equal("Other Song", snapshot.Media.Title);
         }
+
+        [Fact]
+        public void TryApplyFullPayload_AfterStaleStreamState_ReplacesItWithPolledState()
+        {
+            var state = new MediaRemoteAdapterState();
+            state.TryApply(
+                new JsonObject
+                {
+                    ["bundleIdentifier"] = "org.mozilla.firefox",
+                    ["title"] = "Old Song",
+                    ["artist"] = "Old Artist",
+                },
+                isDiff: false,
+                out var staleSnapshot);
+
+            var applied = state.TryApplyFullPayload(
+                """
+                {
+                  "bundleIdentifier": "org.mozilla.firefox",
+                  "title": "New Song",
+                  "artist": "New Artist",
+                  "playing": true
+                }
+                """,
+                out var reconciledSnapshot);
+
+            Assert.True(applied);
+            Assert.NotEqual(staleSnapshot.ChangeKey, reconciledSnapshot.ChangeKey);
+            Assert.Equal("New Song", reconciledSnapshot.Media.Title);
+            Assert.Equal("New Artist", reconciledSnapshot.Media.Artist);
+            Assert.True(reconciledSnapshot.Media.IsPlaying);
+        }
+
+        [Fact]
+        public void TryApplyFullPayload_WithNullResponse_ClearsStaleStateToIdle()
+        {
+            var state = new MediaRemoteAdapterState();
+            state.TryApply(
+                new JsonObject
+                {
+                    ["bundleIdentifier"] = "org.mozilla.firefox",
+                    ["title"] = "Old Song",
+                },
+                isDiff: false,
+                out _);
+
+            var applied = state.TryApplyFullPayload("null", out var snapshot);
+
+            Assert.True(applied);
+            Assert.Equal(NowPlayingStatus.Idle, snapshot.Status);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("not-json")]
+        [InlineData("[]")]
+        public void TryApplyFullPayload_WithInvalidResponse_IsIgnored(String json)
+        {
+            var state = new MediaRemoteAdapterState();
+
+            var applied = state.TryApplyFullPayload(json, out var snapshot);
+
+            Assert.False(applied);
+            Assert.Null(snapshot);
+        }
     }
 }

@@ -54,6 +54,7 @@
     <Compile Include="..\..\src\Providers\NowPlayingCoordinator.cs" LinkBase="Sut\Providers" />
     <Compile Include="..\..\src\Providers\MacOS\MediaRemoteAdapterState.cs" LinkBase="Sut\Providers\MacOS" />
     <Compile Include="..\..\src\Providers\MacOS\MediaRemoteAdapterPaths.cs" LinkBase="Sut\Providers\MacOS" />
+    <Compile Include="..\..\src\Providers\MacOS\ProcessOutputDrainer.cs" LinkBase="Sut\Providers\MacOS" />
     <Compile Include="..\..\src\Rendering\NowPlayingImageRenderer.cs" LinkBase="Sut\Rendering" />
   </ItemGroup>
 

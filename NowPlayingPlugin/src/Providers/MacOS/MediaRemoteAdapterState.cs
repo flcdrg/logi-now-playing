@@ -3,6 +3,7 @@ namespace Loupedeck.NowPlayingPlugin.Providers.MacOS
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Text.Json;
     using System.Text.Json.Nodes;
 
     using Loupedeck.NowPlayingPlugin.Models;
@@ -32,6 +33,36 @@ namespace Loupedeck.NowPlayingPlugin.Providers.MacOS
 
         private JsonObject _state = new JsonObject();
         private Boolean _hasReceivedAnyPayload;
+
+        // Applies the raw output of the adapter's one-shot `get` command as a
+        // full replacement. This is used to periodically reconcile state when
+        // macOS fails to deliver a MediaRemote notification to the long-running
+        // `stream` process.
+        public Boolean TryApplyFullPayload(String json, out NowPlayingSnapshot snapshot)
+        {
+            snapshot = null;
+
+            if (String.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            try
+            {
+                var node = JsonNode.Parse(json);
+                if (node == null || node.GetValueKind() == JsonValueKind.Null)
+                {
+                    return this.TryApply(new JsonObject(), isDiff: false, out snapshot);
+                }
+
+                return node is JsonObject payload
+                    && this.TryApply(payload, isDiff: false, out snapshot);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
 
         // Applies an adapter `stream` message payload. Returns true and sets
         // `snapshot` when the update is relevant to rendering; returns false when

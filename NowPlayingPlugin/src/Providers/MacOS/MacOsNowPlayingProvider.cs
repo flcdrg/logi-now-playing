@@ -22,6 +22,8 @@ namespace Loupedeck.NowPlayingPlugin.Providers.MacOS
 
         private const String PerlExecutablePath = "/usr/bin/perl";
         private static readonly TimeSpan SelfTestTimeout = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan ReconciliationInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan ReconciliationTimeout = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan[] RestartBackoff =
         {
             TimeSpan.FromSeconds(1),
@@ -218,26 +220,48 @@ namespace Loupedeck.NowPlayingPlugin.Providers.MacOS
             try
             {
                 process.Start();
+                this._logInfo(
+                    $"MediaRemoteAdapter stream started with reconciliation every {ReconciliationInterval.TotalSeconds:0}s.");
 
                 using var registration = cancellationToken.Register(() => this.KillCurrentProcess());
+                // The adapter may emit nonfatal diagnostics throughout its
+                // lifetime. Drain stderr concurrently so its redirected pipe
+                // cannot fill and block all future stdout metadata updates.
+                var stderrTask = ProcessOutputDrainer.DrainNonEmptyLinesAsync(
+                    process.StandardError,
+                    line => this._logWarning($"MediaRemoteAdapter: {line}"));
 
-                String line;
-                while ((line = await process.StandardOutput.ReadLineAsync().ConfigureAwait(false)) != null)
+                var readTask = process.StandardOutput.ReadLineAsync();
+                var reconciliationTask = Task.Delay(ReconciliationInterval, cancellationToken);
+
+                while (true)
                 {
+                    var completedTask = await Task.WhenAny(readTask, reconciliationTask).ConfigureAwait(false);
+                    if (completedTask == reconciliationTask)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        await this.ReconcileStateAsync(paths, state, cancellationToken).ConfigureAwait(false);
+                        reconciliationTask = Task.Delay(ReconciliationInterval, cancellationToken);
+                        continue;
+                    }
+
+                    var line = await readTask.ConfigureAwait(false);
+                    if (line == null)
+                    {
+                        break;
+                    }
+
                     receivedAnyLine = true;
                     this.ProcessStreamLine(line, state);
+                    readTask = process.StandardOutput.ReadLineAsync();
                 }
 
                 await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
-                    if (!String.IsNullOrWhiteSpace(stderr))
-                    {
-                        this._logWarning($"MediaRemoteAdapter stream exited (code {process.ExitCode}): {stderr.Trim()}");
-                    }
-                }
+                await stderrTask.ConfigureAwait(false);
 
                 return receivedAnyLine;
             }
@@ -252,6 +276,64 @@ namespace Loupedeck.NowPlayingPlugin.Providers.MacOS
                 }
 
                 process.Dispose();
+            }
+        }
+
+        private async Task ReconcileStateAsync(
+            MediaRemoteAdapterPaths paths,
+            MediaRemoteAdapterState state,
+            CancellationToken cancellationToken)
+        {
+            var startInfo = new ProcessStartInfo(PerlExecutablePath)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            startInfo.ArgumentList.Add(paths.ScriptPath);
+            startInfo.ArgumentList.Add(paths.FrameworkPath);
+            startInfo.ArgumentList.Add("get");
+
+            using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(ReconciliationTimeout);
+
+            try
+            {
+                process.Start();
+
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+                await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+
+                var stdout = await stdoutTask.ConfigureAwait(false);
+                var stderr = await stderrTask.ConfigureAwait(false);
+
+                if (process.ExitCode != 0)
+                {
+                    this._logWarning(
+                        $"MediaRemoteAdapter reconciliation failed (code {process.ExitCode}): {stderr.Trim()}");
+                    return;
+                }
+
+                if (state.TryApplyFullPayload(stdout, out var snapshot))
+                {
+                    this.SnapshotChanged?.Invoke(snapshot);
+                }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                TryKill(process);
+                this._logWarning("MediaRemoteAdapter reconciliation timed out; the live stream remains active.");
+            }
+            catch (OperationCanceledException)
+            {
+                TryKill(process);
+            }
+            catch (Exception ex)
+            {
+                this._logError(ex, "MediaRemoteAdapter reconciliation failed; the live stream remains active.");
             }
         }
 

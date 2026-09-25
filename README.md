@@ -201,9 +201,11 @@ INowPlayingProvider (interface)  — platform-neutral contract: StartAsync,
         ▼
 MacOsNowPlayingProvider         — launches/monitors the vendored
                                    mediaremote-adapter helper process,
-                                   parses its newline-delimited JSON `stream`
-                                   output, and restarts it with backoff if it
-                                   exits unexpectedly.
+                                   continuously drains stdout and stderr,
+                                   parses newline-delimited JSON `stream`
+                                   output, reconciles it against a one-shot
+                                   `get` every 10 seconds, and restarts it with
+                                   backoff if it exits unexpectedly.
 
 NowPlayingImageRenderer          — renders artwork bytes onto a button-sized
                                     BitmapImage, center-cropped ("cover" fit),

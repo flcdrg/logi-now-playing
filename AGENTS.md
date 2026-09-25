@@ -89,7 +89,11 @@ Key architectural rules (deviating breaks the design, not just style):
 - **One shared process, not one per button.** `NowPlayingCoordinator` fans a
   single `MacOsNowPlayingProvider`'s updates out to every configured button
   parameter. Never spawn a new adapter/helper process per command or per
-  button.
+  button. The provider continuously drains both stdout and stderr from that
+  long-running process; deferring stderr reads until process exit can fill the
+  pipe and deadlock all future metadata updates. A one-shot `get`
+  reconciliation every 10 seconds also repairs state if macOS drops a stream
+  notification.
 - **`Idle` vs `Unavailable` are distinct states**, not both collapsed to
   "nothing to show". `Idle` = provider healthy, nothing playing anywhere.
   `Unavailable` = the provider itself can't function (e.g. unsupported OS
